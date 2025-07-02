@@ -4,23 +4,28 @@ import { useEffect, useState } from "react"
 import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, TextInput, Alert, Modal } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore"
-import { db } from "../../firebase/firebaseConfig"
+import { db } from "../../config/firebase"
 import { useAuth } from "../../contexts/AuthContext"
+import { LinearGradient } from "expo-linear-gradient"
 
 interface Student {
   id: string
   email: string
   studentName: string
   parentName?: string
+  studentId: string
+  phone?: string
+  address?: string
   createdAt: string
   status: "active" | "inactive"
 }
 
-export default function StudentManagement() {
+export default function StudentManagement({ navigation }: any) {
   const { userData } = useAuth()
   const [students, setStudents] = useState<Student[]>([])
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("all")
   const [loading, setLoading] = useState(true)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [modalVisible, setModalVisible] = useState(false)
@@ -31,7 +36,7 @@ export default function StudentManagement() {
 
   useEffect(() => {
     filterStudents()
-  }, [searchQuery, students])
+  }, [searchQuery, filterStatus, students])
 
   const loadStudents = async () => {
     if (!userData) return
@@ -60,17 +65,23 @@ export default function StudentManagement() {
   }
 
   const filterStudents = () => {
-    if (!searchQuery) {
-      setFilteredStudents(students)
-    } else {
-      const filtered = students.filter(
+    let filtered = students
+
+    if (searchQuery) {
+      filtered = filtered.filter(
         (student) =>
           student.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
           student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          student.studentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (student.parentName && student.parentName.toLowerCase().includes(searchQuery.toLowerCase())),
       )
-      setFilteredStudents(filtered)
     }
+
+    if (filterStatus !== "all") {
+      filtered = filtered.filter((student) => student.status === filterStatus)
+    }
+
+    setFilteredStudents(filtered)
   }
 
   const toggleStudentStatus = async (student: Student) => {
@@ -113,26 +124,85 @@ export default function StudentManagement() {
     )
   }
 
-  const renderStudent = ({ item }: { item: Student }) => (
+  const renderStudent = ({ item, index }: { item: Student; index: number }) => (
     <TouchableOpacity
-      style={styles.studentCard}
+      style={[styles.studentCard, { marginTop: index === 0 ? 0 : 16 }]}
       onPress={() => {
         setSelectedStudent(item)
         setModalVisible(true)
       }}
     >
-      <View style={styles.studentInfo}>
-        <View style={styles.studentHeader}>
-          <Text style={styles.studentName}>{item.studentName}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: item.status === "active" ? "#10b981" : "#ef4444" }]}>
-            <Text style={styles.statusText}>{item.status}</Text>
+      <LinearGradient
+        colors={item.status === "active" ? ["#ffffff", "#f0f9ff"] : ["#ffffff", "#fef2f2"]}
+        style={styles.cardGradient}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.avatarContainer}>
+            <LinearGradient
+              colors={item.status === "active" ? ["#10b981", "#2563eb"] : ["#ef4444", "#f59e0b"]}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>{item.studentName.charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
+          </View>
+          <View style={styles.studentInfo}>
+            <Text style={styles.studentName}>{item.studentName}</Text>
+            <Text style={styles.studentId}>ID: {item.studentId}</Text>
+            <Text style={styles.studentEmail}>{item.email}</Text>
+          </View>
+          <View style={styles.statusContainer}>
+            <View
+              style={[styles.statusIndicator, { backgroundColor: item.status === "active" ? "#10b981" : "#ef4444" }]}
+            />
+            <Text style={[styles.statusText, { color: item.status === "active" ? "#10b981" : "#ef4444" }]}>
+              {item.status}
+            </Text>
           </View>
         </View>
-        <Text style={styles.studentEmail}>{item.email}</Text>
-        {item.parentName && <Text style={styles.parentName}>Parent: {item.parentName}</Text>}
-        <Text style={styles.joinDate}>Joined: {new Date(item.createdAt).toLocaleDateString()}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#64748b" />
+
+        <View style={styles.cardBody}>
+          {item.parentName && (
+            <View style={styles.infoRow}>
+              <Ionicons name="people" size={16} color="#64748b" />
+              <Text style={styles.infoText}>Parent: {item.parentName}</Text>
+            </View>
+          )}
+          {item.phone && (
+            <View style={styles.infoRow}>
+              <Ionicons name="call" size={16} color="#64748b" />
+              <Text style={styles.infoText}>{item.phone}</Text>
+            </View>
+          )}
+          <View style={styles.infoRow}>
+            <Ionicons name="calendar" size={16} color="#64748b" />
+            <Text style={styles.infoText}>Joined {new Date(item.createdAt).toLocaleDateString()}</Text>
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <TouchableOpacity style={styles.actionChip}>
+            <Ionicons name="eye" size={14} color="#2563eb" />
+            <Text style={styles.actionChipText}>View Details</Text>
+          </TouchableOpacity>
+          <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  )
+
+  const FilterChip = ({ status, label, count }: { status: typeof filterStatus; label: string; count: number }) => (
+    <TouchableOpacity
+      style={[styles.filterChip, filterStatus === status && styles.filterChipActive]}
+      onPress={() => setFilterStatus(status)}
+    >
+      <LinearGradient
+        colors={filterStatus === status ? ["#10b981", "#2563eb"] : ["#ffffff", "#ffffff"]}
+        style={styles.filterChipGradient}
+      >
+        <Text style={[styles.filterChipText, filterStatus === status && styles.filterChipTextActive]}>
+          {label} ({count})
+        </Text>
+      </LinearGradient>
     </TouchableOpacity>
   )
 
@@ -145,62 +215,128 @@ export default function StudentManagement() {
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Student Details</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Ionicons name="close" size={24} color="#64748b" />
-            </TouchableOpacity>
-          </View>
+          <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.modalHeaderGradient}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalAvatarContainer}>
+                <Text style={styles.modalAvatarText}>{selectedStudent?.studentName.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={styles.modalHeaderInfo}>
+                <Text style={styles.modalTitle}>{selectedStudent?.studentName}</Text>
+                <Text style={styles.modalSubtitle}>Student Details</Text>
+              </View>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
 
           {selectedStudent && (
             <View style={styles.modalBody}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Name:</Text>
-                <Text style={styles.detailValue}>{selectedStudent.studentName}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Email:</Text>
-                <Text style={styles.detailValue}>{selectedStudent.email}</Text>
-              </View>
-              {selectedStudent.parentName && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Parent:</Text>
-                  <Text style={styles.detailValue}>{selectedStudent.parentName}</Text>
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Personal Information</Text>
+                <View style={styles.detailCard}>
+                  <View style={styles.detailRow}>
+                    <Ionicons name="person" size={20} color="#2563eb" />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Full Name</Text>
+                      <Text style={styles.detailValue}>{selectedStudent.studentName}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Ionicons name="mail" size={20} color="#2563eb" />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Email</Text>
+                      <Text style={styles.detailValue}>{selectedStudent.email}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Ionicons name="card" size={20} color="#2563eb" />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Student ID</Text>
+                      <Text style={styles.detailValue}>{selectedStudent.studentId}</Text>
+                    </View>
+                  </View>
+                  {selectedStudent.parentName && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="people" size={20} color="#2563eb" />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>Parent/Guardian</Text>
+                        <Text style={styles.detailValue}>{selectedStudent.parentName}</Text>
+                      </View>
+                    </View>
+                  )}
+                  {selectedStudent.phone && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="call" size={20} color="#2563eb" />
+                      <View style={styles.detailContent}>
+                        <Text style={styles.detailLabel}>Phone</Text>
+                        <Text style={styles.detailValue}>{selectedStudent.phone}</Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
-              )}
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Status:</Text>
-                <Text
-                  style={[styles.detailValue, { color: selectedStudent.status === "active" ? "#10b981" : "#ef4444" }]}
-                >
-                  {selectedStudent.status}
-                </Text>
               </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Joined:</Text>
-                <Text style={styles.detailValue}>{new Date(selectedStudent.createdAt).toLocaleDateString()}</Text>
+
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Account Status</Text>
+                <View style={styles.detailCard}>
+                  <View style={styles.detailRow}>
+                    <Ionicons
+                      name={selectedStudent.status === "active" ? "checkmark-circle" : "close-circle"}
+                      size={20}
+                      color={selectedStudent.status === "active" ? "#10b981" : "#ef4444"}
+                    />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Status</Text>
+                      <Text
+                        style={[
+                          styles.detailValue,
+                          { color: selectedStudent.status === "active" ? "#10b981" : "#ef4444" },
+                        ]}
+                      >
+                        {selectedStudent.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Ionicons name="calendar" size={20} color="#2563eb" />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Joined Date</Text>
+                      <Text style={styles.detailValue}>{new Date(selectedStudent.createdAt).toLocaleDateString()}</Text>
+                    </View>
+                  </View>
+                </View>
               </View>
 
               <View style={styles.modalActions}>
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.toggleButton]}
+                  style={styles.actionButton}
                   onPress={() => {
                     toggleStudentStatus(selectedStudent)
                     setModalVisible(false)
                   }}
                 >
-                  <Text style={styles.toggleButtonText}>
-                    {selectedStudent.status === "active" ? "Deactivate" : "Activate"}
-                  </Text>
+                  <LinearGradient
+                    colors={selectedStudent.status === "active" ? ["#f59e0b", "#ef4444"] : ["#10b981", "#2563eb"]}
+                    style={styles.actionButtonGradient}
+                  >
+                    <Ionicons name={selectedStudent.status === "active" ? "pause" : "play"} size={16} color="white" />
+                    <Text style={styles.actionButtonText}>
+                      {selectedStudent.status === "active" ? "Deactivate" : "Activate"}
+                    </Text>
+                  </LinearGradient>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.deleteButton]}
+                  style={styles.actionButton}
                   onPress={() => {
                     deleteStudent(selectedStudent)
                     setModalVisible(false)
                   }}
                 >
-                  <Text style={styles.deleteButtonText}>Delete</Text>
+                  <LinearGradient colors={["#ef4444", "#dc2626"]} style={styles.actionButtonGradient}>
+                    <Ionicons name="trash" size={16} color="white" />
+                    <Text style={styles.actionButtonText}>Delete</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
             </View>
@@ -210,21 +346,47 @@ export default function StudentManagement() {
     </Modal>
   )
 
+  const activeCount = students.filter((s) => s.status === "active").length
+  const inactiveCount = students.filter((s) => s.status === "inactive").length
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Student Management</Text>
-        <Text style={styles.subtitle}>{students.length} students registered</Text>
-      </View>
+      <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.headerGradient}>
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>Student Management</Text>
+            <Text style={styles.subtitle}>{students.length} students registered</Text>
+          </View>
+          <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate("AddStudent")}>
+            <LinearGradient
+              colors={["rgba(255,255,255,0.2)", "rgba(255,255,255,0.1)"]}
+              style={styles.addButtonGradient}
+            >
+              <Ionicons name="person-add" size={20} color="white" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search students..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+      <View style={styles.searchSection}>
+        <View style={styles.searchContainer}>
+          <LinearGradient colors={["#ffffff", "#f8fafc"]} style={styles.searchGradient}>
+            <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search students by name, email, or ID..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#94a3b8"
+            />
+          </LinearGradient>
+        </View>
+
+        <View style={styles.filterContainer}>
+          <FilterChip status="all" label="All" count={students.length} />
+          <FilterChip status="active" label="Active" count={activeCount} />
+          <FilterChip status="inactive" label="Inactive" count={inactiveCount} />
+        </View>
       </View>
 
       <FlatList
@@ -235,12 +397,17 @@ export default function StudentManagement() {
         contentContainerStyle={styles.listContent}
         refreshing={loading}
         onRefresh={loadStudents}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={64} color="#cbd5e1" />
+            <LinearGradient colors={["#f1f5f9", "#e2e8f0"]} style={styles.emptyIconContainer}>
+              <Ionicons name="people-outline" size={48} color="#94a3b8" />
+            </LinearGradient>
             <Text style={styles.emptyText}>No students found</Text>
             <Text style={styles.emptySubtext}>
-              Students will appear here when they register with your institution ID
+              {searchQuery || filterStatus !== "all"
+                ? "Try adjusting your search or filters"
+                : "Students will appear here when they register with your institution ID"}
             </Text>
           </View>
         }
@@ -256,42 +423,95 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
   },
+  headerGradient: {
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
   header: {
-    padding: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
     paddingBottom: 10,
+  },
+  headerContent: {
+    flex: 1,
   },
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "white",
   },
   subtitle: {
     fontSize: 14,
-    color: "#64748b",
+    color: "rgba(255, 255, 255, 0.8)",
     marginTop: 4,
   },
+  addButton: {
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  addButtonGradient: {
+    padding: 12,
+  },
+  searchSection: {
+    padding: 20,
+    paddingBottom: 10,
+  },
   searchContainer: {
+    borderRadius: 16,
+    overflow: "hidden",
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchGradient: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "white",
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 12,
     paddingHorizontal: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    paddingVertical: 12,
   },
   searchIcon: {
     marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    height: 44,
     fontSize: 16,
     color: "#1e293b",
+  },
+  filterContainer: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  filterChip: {
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  filterChipActive: {
+    shadowOpacity: 0.15,
+    elevation: 3,
+  },
+  filterChipGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.5)",
+  },
+  filterChipText: {
+    fontSize: 14,
+    color: "#64748b",
+    fontWeight: "500",
+  },
+  filterChipTextActive: {
+    color: "white",
   },
   list: {
     flex: 1,
@@ -301,75 +521,129 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   studentCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cardGradient: {
     padding: 16,
-    marginBottom: 12,
+  },
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    marginBottom: 12,
+  },
+  avatarContainer: {
+    marginRight: 12,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
   },
   studentInfo: {
     flex: 1,
   },
-  studentHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
   studentName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "600",
     color: "#1e293b",
-    flex: 1,
+    marginBottom: 2,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
+  studentId: {
     fontSize: 12,
-    color: "white",
-    fontWeight: "500",
-    textTransform: "capitalize",
+    color: "#64748b",
+    marginBottom: 2,
   },
   studentEmail: {
     fontSize: 14,
     color: "#64748b",
-    marginBottom: 2,
   },
-  parentName: {
+  statusContainer: {
+    alignItems: "center",
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  cardBody: {
+    marginBottom: 12,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  infoText: {
     fontSize: 14,
     color: "#64748b",
-    marginBottom: 2,
+    marginLeft: 8,
   },
-  joinDate: {
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(226, 232, 240, 0.5)",
+  },
+  actionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(37, 99, 235, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  actionChipText: {
     fontSize: 12,
-    color: "#94a3b8",
+    color: "#2563eb",
+    fontWeight: "500",
+    marginLeft: 4,
   },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
   },
+  emptyIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
   emptyText: {
     fontSize: 18,
     fontWeight: "600",
     color: "#64748b",
-    marginTop: 16,
+    marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
     color: "#94a3b8",
     textAlign: "center",
-    marginTop: 8,
     paddingHorizontal: 40,
+    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
@@ -378,67 +652,107 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 40,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "90%",
+    overflow: "hidden",
+  },
+  modalHeaderGradient: {
+    paddingTop: 20,
+    paddingBottom: 20,
   },
   modalHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    paddingHorizontal: 20,
+  },
+  modalAvatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  modalAvatarText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+  },
+  modalHeaderInfo: {
+    flex: 1,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "600",
-    color: "#1e293b",
+    color: "white",
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 2,
+  },
+  closeButton: {
+    padding: 4,
   },
   modalBody: {
     padding: 20,
   },
+  detailSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1e293b",
+    marginBottom: 12,
+  },
+  detailCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 16,
+  },
   detailRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
+    marginBottom: 16,
+  },
+  detailContent: {
+    marginLeft: 12,
+    flex: 1,
   },
   detailLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: "#64748b",
-    fontWeight: "500",
+    marginBottom: 2,
   },
   detailValue: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#1e293b",
-    fontWeight: "600",
+    fontWeight: "500",
   },
   modalActions: {
     flexDirection: "row",
-    marginTop: 24,
     gap: 12,
+    marginTop: 8,
   },
   actionButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  actionButtonGradient: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  toggleButton: {
-    backgroundColor: "#2563eb",
-  },
-  toggleButtonText: {
+  actionButtonText: {
     color: "white",
+    fontSize: 14,
     fontWeight: "600",
-  },
-  deleteButton: {
-    backgroundColor: "#ef4444",
-  },
-  deleteButtonText: {
-    color: "white",
-    fontWeight: "600",
+    marginLeft: 6,
   },
 })
