@@ -22,6 +22,8 @@ import AdminDashboard from "./screens/admin/AdminDashboard"
 import StudentManagement from "./screens/admin/StudentManagement"
 import BillingManagement from "./screens/admin/BillingManagement"
 import CreateBill from "./screens/admin/CreateBill"
+import AddStudent from "./screens/admin/AddStudent"
+import EMIManagement from "./screens/admin/EMIManagement"
 
 // Student Screens
 import StudentDashboard from "./screens/student/StudentDashboard"
@@ -29,7 +31,8 @@ import BillingHistory from "./screens/student/BillingHistory"
 import InvoiceViewer from "./screens/student/InvoiceViewer"
 
 // Shared Screens
-import ProfileScreen from "./screens/shared/ProfileScreen"
+import AdminProfileScreen from "./screens/admin/AdminProfileScreen"
+import StudentProfileScreen from "./screens/student/StudentProfileScreen"
 
 const Stack = createStackNavigator()
 const Tab = createBottomTabNavigator()
@@ -58,12 +61,17 @@ function AdminTabs() {
         tabBarActiveTintColor: "#2563eb",
         tabBarInactiveTintColor: "gray",
         headerShown: false,
+        tabBarStyle: {
+          backgroundColor: "white",
+          borderTopWidth: 1,
+          borderTopColor: "#e2e8f0",
+        },
       })}
     >
       <Tab.Screen name="Dashboard" component={AdminDashboard} />
       <Tab.Screen name="Students" component={StudentManagement} />
       <Tab.Screen name="Billing" component={BillingManagement} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={AdminProfileScreen} />
     </Tab.Navigator>
   )
 }
@@ -90,11 +98,16 @@ function StudentTabs() {
         tabBarActiveTintColor: "#2563eb",
         tabBarInactiveTintColor: "gray",
         headerShown: false,
+        tabBarStyle: {
+          backgroundColor: "white",
+          borderTopWidth: 1,
+          borderTopColor: "#e2e8f0",
+        },
       })}
     >
       <Tab.Screen name="Dashboard" component={StudentDashboard} />
       <Tab.Screen name="History" component={BillingHistory} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={StudentProfileScreen} />
     </Tab.Navigator>
   )
 }
@@ -143,6 +156,8 @@ function AppNavigator() {
               <>
                 <Stack.Screen name="AdminMain" component={AdminTabs} />
                 <Stack.Screen name="CreateBill" component={CreateBill} />
+                <Stack.Screen name="AddStudent" component={AddStudent} />
+                <Stack.Screen name="EMIManagement" component={EMIManagement} />
               </>
             ) : (
               <>

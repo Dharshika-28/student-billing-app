@@ -1,322 +1,202 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, TextInput, Alert, Modal } from "react-native"
+import { useState, useEffect } from "react"
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { collection, query, where, getDocs, doc, updateDoc, orderBy } from "firebase/firestore"
+import { collection, addDoc, query, where, getDocs } from "firebase/firestore"
 import { db } from "../../firebase/firebaseConfig"
 import { useAuth } from "../../contexts/AuthContext"
+import { LinearGradient } from "expo-linear-gradient"
 
-interface Bill {
-  id: string
-  studentId: string
-  studentName: string
-  description: string
-  amount: number
-  dueDate: string
-  status: "pending" | "paid" | "overdue"
-  createdAt: string
-  paidAt?: string
+interface Props {
+  navigation: any
 }
 
-export default function BillingManagement({ navigation }: any) {
+export default function CreateBill({ navigation }: Props) {
   const { userData } = useAuth()
-  const [bills, setBills] = useState<Bill[]>([])
-  const [filteredBills, setFilteredBills] = useState<Bill[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "overdue">("all")
-  const [loading, setLoading] = useState(true)
-  const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
-  const [modalVisible, setModalVisible] = useState(false)
+  const [students, setStudents] = useState<any[]>([])
+  const [selectedStudent, setSelectedStudent] = useState("")
+  const [description, setDescription] = useState("")
+  const [amount, setAmount] = useState("")
+  const [dueDate, setDueDate] = useState("")
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    loadBills()
+    loadStudents()
+    // Set default due date to today
+    const today = new Date()
+    setDueDate(today.toISOString().split("T")[0])
   }, [])
 
-  useEffect(() => {
-    filterBills()
-  }, [searchQuery, filterStatus, bills])
-
-  const loadBills = async () => {
+  const loadStudents = async () => {
     if (!userData) return
 
     try {
-      const billsQuery = query(
-        collection(db, "bills"),
+      const studentsQuery = query(
+        collection(db, "users"),
+        where("userType", "==", "student"),
         where("institutionId", "==", userData.uid),
-        orderBy("createdAt", "desc"),
+        where("status", "==", "active"),
       )
 
-      const snapshot = await getDocs(billsQuery)
-      const billsData = snapshot.docs.map((doc) => {
-        const data = doc.data()
-        const dueDate = new Date(data.dueDate)
-        const now = new Date()
+      const snapshot = await getDocs(studentsQuery)
+      const studentsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
 
-        // Update status based on due date
-        let status = data.status
-        if (status === "pending" && dueDate < now) {
-          status = "overdue"
-        }
-
-        return {
-          id: doc.id,
-          ...data,
-          status,
-        }
-      }) as Bill[]
-
-      setBills(billsData)
+      setStudents(studentsData)
     } catch (error) {
-      console.error("Error loading bills:", error)
-      Alert.alert("Error", "Failed to load bills")
+      console.error("Error loading students:", error)
+      Alert.alert("Error", "Failed to load students")
+    }
+  }
+
+  const handleCreateBill = async () => {
+    if (!selectedStudent || !description || !amount || !dueDate) {
+      Alert.alert("Error", "Please fill in all required fields")
+      return
+    }
+
+    const student = students.find((s) => s.id === selectedStudent)
+    if (!student) {
+      Alert.alert("Error", "Selected student not found")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const billData = {
+        studentId: selectedStudent,
+        studentName: student.studentName,
+        description,
+        amount: Number.parseFloat(amount),
+        dueDate: new Date(dueDate).toISOString(),
+        status: "pending",
+        institutionId: userData?.uid,
+        createdAt: new Date().toISOString(),
+      }
+
+      await addDoc(collection(db, "bills"), billData)
+
+      Alert.alert("Success", "Bill created successfully!", [
+        {
+          text: "OK",
+          onPress: () => navigation.goBack(),
+        },
+      ])
+    } catch (error) {
+      console.error("Error creating bill:", error)
+      Alert.alert("Error", "Failed to create bill")
     } finally {
       setLoading(false)
     }
   }
 
-  const filterBills = () => {
-    let filtered = bills
-
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (bill) =>
-          bill.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          bill.description.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    }
-
-    if (filterStatus !== "all") {
-      filtered = filtered.filter((bill) => bill.status === filterStatus)
-    }
-
-    setFilteredBills(filtered)
+  const setQuickDueDate = (days: number) => {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    setDueDate(date.toISOString().split("T")[0])
   }
-
-  const markAsPaid = async (bill: Bill) => {
-    try {
-      await updateDoc(doc(db, "bills", bill.id), {
-        status: "paid",
-        paidAt: new Date().toISOString(),
-      })
-
-      setBills((prev) =>
-        prev.map((b) => (b.id === bill.id ? { ...b, status: "paid", paidAt: new Date().toISOString() } : b)),
-      )
-
-      Alert.alert("Success", "Payment marked as received")
-    } catch (error) {
-      console.error("Error updating bill:", error)
-      Alert.alert("Error", "Failed to update payment status")
-    }
-  }
-
-  const sendReminder = async (bill: Bill) => {
-    try {
-      // Get student's push token
-      const studentDoc = await getDocs(query(collection(db, "users"), where("__name__", "==", bill.studentId)))
-
-      if (!studentDoc.empty) {
-        const studentData = studentDoc.docs[0].data()
-        if (studentData.pushToken) {
-          await fetch("https://exp.host/--/api/v2/push/send", {
-            method: "POST",
-            headers: {
-              Accept: "application/json",
-              "Accept-encoding": "gzip, deflate",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              to: studentData.pushToken,
-              title: "Payment Reminder",
-              body: `Your payment of $${bill.amount} for ${bill.description} is due on ${new Date(bill.dueDate).toLocaleDateString()}`,
-              data: { billId: bill.id },
-            }),
-          })
-
-          Alert.alert("Success", "Reminder sent successfully")
-        } else {
-          Alert.alert("Error", "Student has not enabled push notifications")
-        }
-      }
-    } catch (error) {
-      console.error("Error sending reminder:", error)
-      Alert.alert("Error", "Failed to send reminder")
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "#10b981"
-      case "overdue":
-        return "#ef4444"
-      case "pending":
-        return "#f59e0b"
-      default:
-        return "#64748b"
-    }
-  }
-
-  const renderBill = ({ item }: { item: Bill }) => (
-    <TouchableOpacity
-      style={styles.billCard}
-      onPress={() => {
-        setSelectedBill(item)
-        setModalVisible(true)
-      }}
-    >
-      <View style={styles.billInfo}>
-        <View style={styles.billHeader}>
-          <Text style={styles.studentName}>{item.studentName}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-            <Text style={styles.statusText}>{item.status}</Text>
-          </View>
-        </View>
-        <Text style={styles.billDescription}>{item.description}</Text>
-        <Text style={styles.billAmount}>${item.amount.toFixed(2)}</Text>
-        <Text style={styles.dueDate}>Due: {new Date(item.dueDate).toLocaleDateString()}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#64748b" />
-    </TouchableOpacity>
-  )
-
-  const FilterButton = ({ status, label }: { status: typeof filterStatus; label: string }) => (
-    <TouchableOpacity
-      style={[styles.filterButton, filterStatus === status && styles.filterButtonActive]}
-      onPress={() => setFilterStatus(status)}
-    >
-      <Text style={[styles.filterButtonText, filterStatus === status && styles.filterButtonTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  )
-
-  const BillModal = () => (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={modalVisible}
-      onRequestClose={() => setModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Bill Details</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Ionicons name="close" size={24} color="#64748b" />
-            </TouchableOpacity>
-          </View>
-
-          {selectedBill && (
-            <View style={styles.modalBody}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Student:</Text>
-                <Text style={styles.detailValue}>{selectedBill.studentName}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Description:</Text>
-                <Text style={styles.detailValue}>{selectedBill.description}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Amount:</Text>
-                <Text style={styles.detailValue}>${selectedBill.amount.toFixed(2)}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Due Date:</Text>
-                <Text style={styles.detailValue}>{new Date(selectedBill.dueDate).toLocaleDateString()}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Status:</Text>
-                <Text style={[styles.detailValue, { color: getStatusColor(selectedBill.status) }]}>
-                  {selectedBill.status}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Created:</Text>
-                <Text style={styles.detailValue}>{new Date(selectedBill.createdAt).toLocaleDateString()}</Text>
-              </View>
-              {selectedBill.paidAt && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Paid:</Text>
-                  <Text style={styles.detailValue}>{new Date(selectedBill.paidAt).toLocaleDateString()}</Text>
-                </View>
-              )}
-
-              <View style={styles.modalActions}>
-                {selectedBill.status !== "paid" && (
-                  <>
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.paidButton]}
-                      onPress={() => {
-                        markAsPaid(selectedBill)
-                        setModalVisible(false)
-                      }}
-                    >
-                      <Text style={styles.paidButtonText}>Mark as Paid</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.reminderButton]}
-                      onPress={() => {
-                        sendReminder(selectedBill)
-                        setModalVisible(false)
-                      }}
-                    >
-                      <Text style={styles.reminderButtonText}>Send Reminder</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            </View>
-          )}
-        </View>
-      </View>
-    </Modal>
-  )
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Billing Management</Text>
-        <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate("CreateBill")}>
-          <Ionicons name="add" size={20} color="white" />
-          <Text style={styles.createButtonText}>Create Bill</Text>
-        </TouchableOpacity>
-      </View>
+      <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.headerGradient}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.title}>Create New Bill</Text>
+        </View>
+      </LinearGradient>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search bills..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <View style={styles.content}>
+            <View style={styles.form}>
+              <Text style={styles.sectionTitle}>Select Student</Text>
+              <View style={styles.studentsContainer}>
+                {students.map((student) => (
+                  <TouchableOpacity
+                    key={student.id}
+                    style={[styles.studentCard, selectedStudent === student.id && styles.selectedStudentCard]}
+                    onPress={() => setSelectedStudent(student.id)}
+                  >
+                    <View style={styles.studentInfo}>
+                      <Text style={[styles.studentName, selectedStudent === student.id && styles.selectedStudentName]}>
+                        {student.studentName}
+                      </Text>
+                      <Text style={styles.studentId}>ID: {student.studentId}</Text>
+                    </View>
+                    {selectedStudent === student.id && <Ionicons name="checkmark-circle" size={24} color="#10b981" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-      <View style={styles.filterContainer}>
-        <FilterButton status="all" label="All" />
-        <FilterButton status="pending" label="Pending" />
-        <FilterButton status="paid" label="Paid" />
-        <FilterButton status="overdue" label="Overdue" />
-      </View>
+              <Text style={styles.sectionTitle}>Bill Details</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons name="document-text" size={20} color="#64748b" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Description (e.g., Tuition Fee, Library Fee)"
+                  value={description}
+                  onChangeText={setDescription}
+                />
+              </View>
 
-      <FlatList
-        data={filteredBills}
-        renderItem={renderBill}
-        keyExtractor={(item) => item.id}
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-        refreshing={loading}
-        onRefresh={loadBills}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="card-outline" size={64} color="#cbd5e1" />
-            <Text style={styles.emptyText}>No bills found</Text>
-            <Text style={styles.emptySubtext}>Create your first bill to get started</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons name="card" size={20} color="#64748b" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Amount"
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <Text style={styles.sectionTitle}>Due Date</Text>
+              <View style={styles.quickDateContainer}>
+                <TouchableOpacity style={styles.quickDateButton} onPress={() => setQuickDueDate(0)}>
+                  <Text style={styles.quickDateText}>Today</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickDateButton} onPress={() => setQuickDueDate(7)}>
+                  <Text style={styles.quickDateText}>7 Days</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickDateButton} onPress={() => setQuickDueDate(30)}>
+                  <Text style={styles.quickDateText}>30 Days</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Ionicons name="calendar" size={20} color="#64748b" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="YYYY-MM-DD" value={dueDate} onChangeText={setDueDate} />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.createButton, loading && styles.createButtonDisabled]}
+                onPress={handleCreateBill}
+                disabled={loading}
+              >
+                <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.buttonGradient}>
+                  <Text style={styles.createButtonText}>{loading ? "Creating Bill..." : "Create Bill"}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
           </View>
-        }
-      />
-
-      <BillModal />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
@@ -326,226 +206,136 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
   },
+  headerGradient: {
+    paddingTop: 20,
+  },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     padding: 20,
-    paddingBottom: 10,
+    paddingBottom: 30,
+  },
+  backButton: {
+    marginRight: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  createButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#2563eb",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  createButtonText: {
-    color: "white",
+    fontSize: 20,
     fontWeight: "600",
-    marginLeft: 4,
+    color: "white",
   },
-  searchContainer: {
+  keyboardView: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+  },
+  form: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1e293b",
+    marginBottom: 12,
+    marginTop: 20,
+  },
+  studentsContainer: {
+    maxHeight: 200,
+    marginBottom: 20,
+  },
+  studentCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "white",
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  filterContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "white",
+    justifyContent: "space-between",
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
-  filterButtonActive: {
-    backgroundColor: "#2563eb",
+  selectedStudentCard: {
+    backgroundColor: "#eff6ff",
     borderColor: "#2563eb",
   },
-  filterButtonText: {
-    fontSize: 14,
-    color: "#64748b",
-    fontWeight: "500",
-  },
-  filterButtonTextActive: {
-    color: "white",
-  },
-  list: {
+  studentInfo: {
     flex: 1,
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  billCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  billInfo: {
-    flex: 1,
-  },
-  billHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
   },
   studentName: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "500",
     color: "#1e293b",
-    flex: 1,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  selectedStudentName: {
+    color: "#2563eb",
+  },
+  studentId: {
+    fontSize: 12,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
     borderRadius: 12,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  statusText: {
-    fontSize: 12,
-    color: "white",
-    fontWeight: "500",
-    textTransform: "capitalize",
+  inputIcon: {
+    marginRight: 12,
   },
-  billDescription: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 4,
-  },
-  billAmount: {
+  input: {
+    flex: 1,
+    height: 50,
     fontSize: 16,
-    fontWeight: "600",
     color: "#1e293b",
-    marginBottom: 4,
   },
-  dueDate: {
-    fontSize: 12,
-    color: "#94a3b8",
+  quickDateContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
   },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#64748b",
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: "#94a3b8",
-    textAlign: "center",
-    marginTop: 8,
-  },
-  modalOverlay: {
+  quickDateButton: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1e293b",
-  },
-  modalBody: {
-    padding: 20,
-  },
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: "#64748b",
-    fontWeight: "500",
-  },
-  detailValue: {
-    fontSize: 14,
-    color: "#1e293b",
-    fontWeight: "600",
-  },
-  modalActions: {
-    flexDirection: "row",
-    marginTop: 24,
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#eff6ff",
     borderRadius: 8,
     alignItems: "center",
   },
-  paidButton: {
-    backgroundColor: "#10b981",
+  quickDateText: {
+    fontSize: 14,
+    color: "#2563eb",
+    fontWeight: "500",
   },
-  paidButtonText: {
+  createButton: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginTop: 20,
+  },
+  createButtonDisabled: {
+    opacity: 0.6,
+  },
+  buttonGradient: {
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  createButtonText: {
     color: "white",
-    fontWeight: "600",
-  },
-  reminderButton: {
-    backgroundColor: "#f59e0b",
-  },
-  reminderButtonText: {
-    color: "white",
+    fontSize: 16,
     fontWeight: "600",
   },
 })

@@ -6,32 +6,26 @@ import { Ionicons } from "@expo/vector-icons"
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore"
 import { db } from "../../firebase/firebaseConfig"
 import { useAuth } from "../../contexts/AuthContext"
-
-interface Bill {
-  id: string
-  description: string
-  amount: number
-  dueDate: string
-  status: "pending" | "paid" | "overdue"
-  createdAt: string
-}
+import { LinearGradient } from "expo-linear-gradient"
 
 interface DashboardStats {
-  totalBills: number
-  pendingAmount: number
-  overdueCount: number
-  paidThisMonth: number
+  pendingBills: number
+  totalPaid: number
+  overduePayments: number
+  nextDueAmount: number
+  nextDueDate: string
 }
 
 export default function StudentDashboard({ navigation }: any) {
   const { userData } = useAuth()
   const [stats, setStats] = useState<DashboardStats>({
-    totalBills: 0,
-    pendingAmount: 0,
-    overdueCount: 0,
-    paidThisMonth: 0,
+    pendingBills: 0,
+    totalPaid: 0,
+    overduePayments: 0,
+    nextDueAmount: 0,
+    nextDueDate: "",
   })
-  const [recentBills, setRecentBills] = useState<Bill[]>([])
+  const [recentBills, setRecentBills] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -42,50 +36,55 @@ export default function StudentDashboard({ navigation }: any) {
     if (!userData) return
 
     try {
-      // Load all bills for this student
+      // Load bills data
       const billsQuery = query(
         collection(db, "bills"),
         where("studentId", "==", userData.uid),
         orderBy("createdAt", "desc"),
       )
-
       const billsSnapshot = await getDocs(billsQuery)
-      const bills = billsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Bill[]
 
-      // Calculate stats
-      let pendingAmount = 0
-      let overdueCount = 0
-      let paidThisMonth = 0
+      let pendingBills = 0
+      let totalPaid = 0
+      let overduePayments = 0
+      let nextDueAmount = 0
+      let nextDueDate = ""
       const now = new Date()
-      const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+      const bills = billsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+
+      // Find next due bill
+      const pendingBillsSorted = bills
+        .filter((bill) => bill.status === "pending")
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+
+      if (pendingBillsSorted.length > 0) {
+        nextDueAmount = pendingBillsSorted[0].amount
+        nextDueDate = pendingBillsSorted[0].dueDate
+      }
 
       bills.forEach((bill) => {
         const dueDate = new Date(bill.dueDate)
 
         if (bill.status === "pending") {
-          pendingAmount += bill.amount
+          pendingBills++
           if (dueDate < now) {
-            overdueCount++
+            overduePayments++
           }
         } else if (bill.status === "paid") {
-          const createdDate = new Date(bill.createdAt)
-          if (createdDate >= thisMonth) {
-            paidThisMonth += bill.amount
-          }
+          totalPaid += bill.amount
         }
       })
 
-      // Get recent bills (last 5)
+      // Load recent bills (last 5)
       const recentBillsData = bills.slice(0, 5)
 
       setStats({
-        totalBills: bills.length,
-        pendingAmount,
-        overdueCount,
-        paidThisMonth,
+        pendingBills,
+        totalPaid,
+        overduePayments,
+        nextDueAmount,
+        nextDueDate,
       })
       setRecentBills(recentBillsData)
     } catch (error) {
@@ -95,29 +94,18 @@ export default function StudentDashboard({ navigation }: any) {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "#10b981"
-      case "overdue":
-        return "#ef4444"
-      case "pending":
-        return "#f59e0b"
-      default:
-        return "#64748b"
-    }
-  }
-
-  const StatCard = ({ title, value, icon, color }: any) => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <View style={styles.statContent}>
-        <View>
-          <Text style={styles.statValue}>{value}</Text>
-          <Text style={styles.statTitle}>{title}</Text>
+  const StatCard = ({ title, value, icon, color, onPress }: any) => (
+    <TouchableOpacity style={styles.statCard} onPress={onPress}>
+      <LinearGradient colors={[color, `${color}80`]} style={styles.statGradient}>
+        <View style={styles.statContent}>
+          <View>
+            <Text style={styles.statValue}>{value}</Text>
+            <Text style={styles.statTitle}>{title}</Text>
+          </View>
+          <Ionicons name={icon} size={32} color="white" />
         </View>
-        <Ionicons name={icon} size={32} color={color} />
-      </View>
-    </View>
+      </LinearGradient>
+    </TouchableOpacity>
   )
 
   return (
@@ -126,20 +114,50 @@ export default function StudentDashboard({ navigation }: any) {
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadDashboardData} />}
       >
-        <View style={styles.header}>
-          <Text style={styles.greeting}>Hello!</Text>
-          <Text style={styles.studentName}>{userData?.studentName}</Text>
-        </View>
+        <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.headerGradient}>
+          <View style={styles.header}>
+            <Text style={styles.greeting}>Welcome back!</Text>
+            <Text style={styles.studentName}>{userData?.studentName}</Text>
+            <Text style={styles.institutionName}>{userData?.institutionName}</Text>
+          </View>
+        </LinearGradient>
+
+        {stats.nextDueAmount > 0 && (
+          <View style={styles.nextDueContainer}>
+            <LinearGradient colors={["#f59e0b", "#ef4444"]} style={styles.nextDueGradient}>
+              <View style={styles.nextDueContent}>
+                <Ionicons name="warning" size={24} color="white" />
+                <View style={styles.nextDueInfo}>
+                  <Text style={styles.nextDueTitle}>Next Payment Due</Text>
+                  <Text style={styles.nextDueAmount}>${stats.nextDueAmount.toFixed(2)}</Text>
+                  <Text style={styles.nextDueDate}>Due: {new Date(stats.nextDueDate).toLocaleDateString()}</Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </View>
+        )}
 
         <View style={styles.statsContainer}>
-          <StatCard title="Total Bills" value={stats.totalBills} icon="receipt" color="#2563eb" />
-          <StatCard title="Pending Amount" value={`$${stats.pendingAmount.toFixed(2)}`} icon="time" color="#f59e0b" />
-          <StatCard title="Overdue Bills" value={stats.overdueCount} icon="warning" color="#ef4444" />
           <StatCard
-            title="Paid This Month"
-            value={`$${stats.paidThisMonth.toFixed(2)}`}
+            title="Pending Bills"
+            value={stats.pendingBills}
+            icon="time"
+            color="#f59e0b"
+            onPress={() => navigation.navigate("History", { filter: "pending" })}
+          />
+          <StatCard
+            title="Total Paid"
+            value={`$${stats.totalPaid.toLocaleString()}`}
             icon="checkmark-circle"
             color="#10b981"
+            onPress={() => navigation.navigate("History", { filter: "paid" })}
+          />
+          <StatCard
+            title="Overdue"
+            value={stats.overduePayments}
+            icon="warning"
+            color="#ef4444"
+            onPress={() => navigation.navigate("History", { filter: "overdue" })}
           />
         </View>
 
@@ -160,7 +178,15 @@ export default function StudentDashboard({ navigation }: any) {
                 </View>
                 <View style={styles.billAmount}>
                   <Text style={styles.billAmountText}>${bill.amount.toFixed(2)}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(bill.status) }]}>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      {
+                        backgroundColor:
+                          bill.status === "paid" ? "#10b981" : bill.status === "overdue" ? "#ef4444" : "#f59e0b",
+                      },
+                    ]}
+                  >
                     <Text style={styles.statusText}>{bill.status}</Text>
                   </View>
                 </View>
@@ -207,35 +233,75 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  headerGradient: {
+    paddingTop: 20,
+    paddingBottom: 30,
+  },
   header: {
     padding: 20,
     paddingBottom: 10,
   },
   greeting: {
     fontSize: 16,
-    color: "#64748b",
+    color: "rgba(255, 255, 255, 0.8)",
   },
   studentName: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "white",
     marginTop: 4,
+  },
+  institutionName: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 4,
+  },
+  nextDueContainer: {
+    margin: 20,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  nextDueGradient: {
+    padding: 16,
+  },
+  nextDueContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  nextDueInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  nextDueTitle: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+  nextDueAmount: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "white",
+    marginTop: 2,
+  },
+  nextDueDate: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 2,
   },
   statsContainer: {
     padding: 20,
     paddingTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
   statCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 16,
+    width: "48%",
     marginBottom: 12,
-    borderLeftWidth: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  statGradient: {
+    padding: 16,
   },
   statContent: {
     flexDirection: "row",
@@ -243,13 +309,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "white",
   },
   statTitle: {
-    fontSize: 14,
-    color: "#64748b",
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.8)",
     marginTop: 4,
   },
   section: {

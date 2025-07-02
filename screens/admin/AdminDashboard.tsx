@@ -6,21 +6,24 @@ import { Ionicons } from "@expo/vector-icons"
 import { collection, query, where, getDocs, orderBy, limit } from "firebase/firestore"
 import { db } from "../../firebase/firebaseConfig"
 import { useAuth } from "../../contexts/AuthContext"
+import { LinearGradient } from "expo-linear-gradient"
 
 interface DashboardStats {
   totalStudents: number
   pendingBills: number
   totalRevenue: number
   overduePayments: number
+  todaysDue: number
 }
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ navigation }: any) {
   const { userData } = useAuth()
   const [stats, setStats] = useState<DashboardStats>({
     totalStudents: 0,
     pendingBills: 0,
     totalRevenue: 0,
     overduePayments: 0,
+    todaysDue: 0,
   })
   const [recentBills, setRecentBills] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,13 +52,21 @@ export default function AdminDashboard() {
       let pendingBills = 0
       let totalRevenue = 0
       let overduePayments = 0
+      let todaysDue = 0
       const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
       billsSnapshot.forEach((doc) => {
         const bill = doc.data()
+        const dueDate = new Date(bill.dueDate)
+        const dueDateOnly = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+
         if (bill.status === "pending") {
           pendingBills++
-          if (new Date(bill.dueDate) < now) {
+          if (dueDateOnly.getTime() === today.getTime()) {
+            todaysDue++
+          }
+          if (dueDate < now) {
             overduePayments++
           }
         } else if (bill.status === "paid") {
@@ -81,6 +92,7 @@ export default function AdminDashboard() {
         pendingBills,
         totalRevenue,
         overduePayments,
+        todaysDue,
       })
       setRecentBills(recentBillsData)
     } catch (error) {
@@ -90,16 +102,18 @@ export default function AdminDashboard() {
     }
   }
 
-  const StatCard = ({ title, value, icon, color }: any) => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <View style={styles.statContent}>
-        <View>
-          <Text style={styles.statValue}>{value}</Text>
-          <Text style={styles.statTitle}>{title}</Text>
+  const StatCard = ({ title, value, icon, color, onPress }: any) => (
+    <TouchableOpacity style={styles.statCard} onPress={onPress}>
+      <LinearGradient colors={[color, `${color}80`]} style={styles.statGradient}>
+        <View style={styles.statContent}>
+          <View>
+            <Text style={styles.statValue}>{value}</Text>
+            <Text style={styles.statTitle}>{title}</Text>
+          </View>
+          <Ionicons name={icon} size={32} color="white" />
         </View>
-        <Ionicons name={icon} size={32} color={color} />
-      </View>
-    </View>
+      </LinearGradient>
+    </TouchableOpacity>
   )
 
   return (
@@ -108,21 +122,49 @@ export default function AdminDashboard() {
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadDashboardData} />}
       >
-        <View style={styles.header}>
-          <Text style={styles.greeting}>Welcome back!</Text>
-          <Text style={styles.institutionName}>{userData?.institutionName}</Text>
-        </View>
+        <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.headerGradient}>
+          <View style={styles.header}>
+            <Text style={styles.greeting}>Welcome back!</Text>
+            <Text style={styles.institutionName}>{userData?.institutionName}</Text>
+          </View>
+        </LinearGradient>
 
         <View style={styles.statsContainer}>
-          <StatCard title="Total Students" value={stats.totalStudents} icon="people" color="#10b981" />
-          <StatCard title="Pending Bills" value={stats.pendingBills} icon="time" color="#f59e0b" />
+          <StatCard
+            title="Total Students"
+            value={stats.totalStudents}
+            icon="people"
+            color="#10b981"
+            onPress={() => navigation.navigate("Students")}
+          />
+          <StatCard
+            title="Today's Due"
+            value={stats.todaysDue}
+            icon="today"
+            color="#f59e0b"
+            onPress={() => navigation.navigate("Billing", { filter: "today" })}
+          />
+          <StatCard
+            title="Pending Bills"
+            value={stats.pendingBills}
+            icon="time"
+            color="#8b5cf6"
+            onPress={() => navigation.navigate("Billing", { filter: "pending" })}
+          />
           <StatCard
             title="Total Revenue"
             value={`$${stats.totalRevenue.toLocaleString()}`}
             icon="card"
             color="#2563eb"
+            onPress={() => navigation.navigate("Billing", { filter: "paid" })}
           />
-          <StatCard title="Overdue" value={stats.overduePayments} icon="warning" color="#ef4444" />
+          <StatCard
+            title="Overdue"
+            value={stats.overduePayments}
+            icon="warning"
+            color="#ef4444"
+            onPress={() => navigation.navigate("Billing", { filter: "overdue" })}
+          />
         </View>
 
         <View style={styles.section}>
@@ -153,17 +195,17 @@ export default function AdminDashboard() {
         <View style={styles.quickActions}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("AddStudent")}>
               <Ionicons name="person-add" size={24} color="#2563eb" />
               <Text style={styles.actionButtonText}>Add Student</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("CreateBill")}>
               <Ionicons name="card" size={24} color="#2563eb" />
               <Text style={styles.actionButtonText}>Create Bill</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="notifications" size={24} color="#2563eb" />
-              <Text style={styles.actionButtonText}>Send Reminder</Text>
+            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("EMIManagement")}>
+              <Ionicons name="calendar" size={24} color="#2563eb" />
+              <Text style={styles.actionButtonText}>EMI Setup</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -180,35 +222,39 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  headerGradient: {
+    paddingTop: 20,
+    paddingBottom: 30,
+  },
   header: {
     padding: 20,
     paddingBottom: 10,
   },
   greeting: {
     fontSize: 16,
-    color: "#64748b",
+    color: "rgba(255, 255, 255, 0.8)",
   },
   institutionName: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "white",
     marginTop: 4,
   },
   statsContainer: {
     padding: 20,
     paddingTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
   statCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 16,
+    width: "48%",
     marginBottom: 12,
-    borderLeftWidth: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  statGradient: {
+    padding: 16,
   },
   statContent: {
     flexDirection: "row",
@@ -216,13 +262,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "white",
   },
   statTitle: {
-    fontSize: 14,
-    color: "#64748b",
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.8)",
     marginTop: 4,
   },
   section: {

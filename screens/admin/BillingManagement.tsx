@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { collection, query, where, getDocs, doc, updateDoc, orderBy } from "firebase/firestore"
 import { db } from "../../firebase/firebaseConfig"
 import { useAuth } from "../../contexts/AuthContext"
+import { LinearGradient } from "expo-linear-gradient"
 
 interface Bill {
   id: string
@@ -19,18 +20,22 @@ interface Bill {
   paidAt?: string
 }
 
-export default function BillingManagement({ navigation }: any) {
+export default function BillingManagement({ navigation, route }: any) {
   const { userData } = useAuth()
   const [bills, setBills] = useState<Bill[]>([])
   const [filteredBills, setFilteredBills] = useState<Bill[]>([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "overdue">("all")
+  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "overdue" | "today">("all")
   const [loading, setLoading] = useState(true)
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
   const [modalVisible, setModalVisible] = useState(false)
 
   useEffect(() => {
     loadBills()
+    // Set initial filter from navigation params
+    if (route.params?.filter) {
+      setFilterStatus(route.params.filter)
+    }
   }, [])
 
   useEffect(() => {
@@ -87,7 +92,16 @@ export default function BillingManagement({ navigation }: any) {
     }
 
     if (filterStatus !== "all") {
-      filtered = filtered.filter((bill) => bill.status === filterStatus)
+      if (filterStatus === "today") {
+        const today = new Date()
+        const todayString = today.toISOString().split("T")[0]
+        filtered = filtered.filter((bill) => {
+          const billDate = new Date(bill.dueDate).toISOString().split("T")[0]
+          return billDate === todayString && bill.status === "pending"
+        })
+      } else {
+        filtered = filtered.filter((bill) => bill.status === filterStatus)
+      }
     }
 
     setFilteredBills(filtered)
@@ -274,13 +288,15 @@ export default function BillingManagement({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Billing Management</Text>
-        <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate("CreateBill")}>
-          <Ionicons name="add" size={20} color="white" />
-          <Text style={styles.createButtonText}>Create Bill</Text>
-        </TouchableOpacity>
-      </View>
+      <LinearGradient colors={["#10b981", "#2563eb"]} style={styles.headerGradient}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Billing Management</Text>
+          <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate("CreateBill")}>
+            <Ionicons name="add" size={20} color="white" />
+            <Text style={styles.createButtonText}>Create Bill</Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
 
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
@@ -294,6 +310,7 @@ export default function BillingManagement({ navigation }: any) {
 
       <View style={styles.filterContainer}>
         <FilterButton status="all" label="All" />
+        <FilterButton status="today" label="Today" />
         <FilterButton status="pending" label="Pending" />
         <FilterButton status="paid" label="Paid" />
         <FilterButton status="overdue" label="Overdue" />
@@ -326,6 +343,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
   },
+  headerGradient: {
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -336,12 +357,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "white",
   },
   createButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2563eb",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -381,8 +402,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
     backgroundColor: "white",
     borderWidth: 1,
@@ -393,7 +414,7 @@ const styles = StyleSheet.create({
     borderColor: "#2563eb",
   },
   filterButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     color: "#64748b",
     fontWeight: "500",
   },
